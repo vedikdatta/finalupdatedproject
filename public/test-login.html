@@ -1,0 +1,53 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Test Login</title>
+  </head>
+  <body style="font-family: Arial, sans-serif; padding: 20px;">
+    <h2>Test Login to API</h2>
+    <form id="f">
+      <div>
+        <label>Email: <input id="email" value="" /></label>
+      </div>
+      <div>
+        <label>Phone: <input id="phone" value="" /></label>
+      </div>
+      <div>
+        <label>Password: <input id="password" type="password" value="" /></label>
+      </div>
+      <div style="margin-top:12px">
+        <button type="button" id="byEmail">Login by Email</button>
+        <button type="button" id="byPhone">Login by Phone</button>
+      </div>
+    </form>
+
+    <pre id="out" style="margin-top:18px; background:#f6f8fa; padding:12px; border-radius:6px;">Response will appear here</pre>
+
+    <script>
+      async function send(payload) {
+        document.getElementById('out').textContent = 'Sending... ' + JSON.stringify(payload);
+        try {
+          const r = await fetch('http://localhost:5000/api/login', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+          });
+          const data = await r.json();
+          document.getElementById('out').textContent = r.status + ' ' + JSON.stringify(data);
+        } catch (e) {
+          document.getElementById('out').textContent = 'Error: ' + e;
+        }
+      }
+
+      document.getElementById('byEmail').addEventListener('click', ()=>{
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        send({ email, password });
+      });
+      document.getElementById('byPhone').addEventListener('click', ()=>{
+        const phone = document.getElementById('phone').value;
+        const password = document.getElementById('password').value;
+        send({ phone, password });
+      });
+    </script>
+  </body>
+</html>

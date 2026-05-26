@@ -1,0 +1,116 @@
+Shape: (10000, 17)
+Columns:['UDI', 'Product ID', 'Type', 'Air temperature [K]', 'Process temperature [K]', 'Rotational speed [rpm]', 'Torque [Nm]', 'Tool wear [min]', 'Machine failure', 'Tool Wear Failure', 'Heat Dissipation Failure', 'Power Failure', 'Overstrain Failure', 'Random Failure', 'install_date', 'idle_time', 'cycle_time']
+Data types:UDI                           int64
+Product ID                   object
+Type                         object
+Air temperature [K]         float64
+Process temperature [K]     float64
+Rotational speed [rpm]        int64
+Torque [Nm]                 float64
+Tool wear [min]               int64
+Machine failure               int64
+Tool Wear Failure             int64
+Heat Dissipation Failure      int64
+Power Failure                 int64
+Overstrain Failure            int64
+Random Failure                int64
+install_date                 object
+idle_time                     int64
+cycle_time                  float64
+dtype: object
+First 3 rows:   UDI Product ID Type  Air temperature [K]  ...  Random Failure  install_date  idle_time  cycle_time
+0    1     M14860    M                298.1  ...               0    22-10-2024         22      248.30
+1    2     L47181    L                298.2  ...               0    30-12-2019         81      282.83
+2    3     L47182    L                298.1  ...               0    27-04-2016        103      283.28
+
+[3 rows x 17 columns]
+Missing values:UDI                         0
+Product ID                  0
+Type                        0
+Air temperature [K]         0
+Process temperature [K]     0
+Rotational speed [rpm]      0
+Torque [Nm]                 0
+Tool wear [min]             0
+Machine failure             0
+Tool Wear Failure           0
+Heat Dissipation Failure    0
+Power Failure               0
+Overstrain Failure          0
+Random Failure              0
+install_date                0
+idle_time                   0
+cycle_time                  0
+dtype: int64
+Failure distribution:Machine failure
+0    9661
+1     339
+Name: count, dtype: int64
+Failure rate: 3.39%
+Machine types:Type
+L    6000
+M    2997
+H    1003
+Name: count, dtype: int64
+Type mapping: {'H': np.int64(0), 'L': np.int64(1), 'M': np.int64(2)}
+Feature matrix shape: (10000, 10)
+Target shape: (10000,)
+Feature stats:       Air temperature [K]  Process temperature [K]  Rotational speed [rpm]  ...  Type_encoded  Temp_delta     Power
+count              10000.0                 10000.00                10000.00  ...       10000.0     10000.0  10000.00
+mean                 300.0                   310.01                 1538.78  ...           1.2        10.0  59967.15
+std                    2.0                     1.48                  179.28  ...           0.6         1.0  10193.09
+min                  295.3                   305.70                 1168.00  ...           0.0         7.6  10966.80
+25%                  298.3                   308.80                 1423.00  ...           1.0         9.3  53105.40
+50%                  300.1                   310.10                 1503.00  ...           1.0         9.8  59883.90
+75%                  301.5                   311.10                 1612.00  ...           2.0        11.0  66873.75
+max                  304.5                   313.80                 2886.00  ...           2.0        12.1  99980.40
+
+[8 rows x 10 columns]
+Train size: 8000 | Test size: 2000
+Train failures: 271 (3.4%)
+Test failures:  68  (3.4%)
+Scaled feature means (should be ~0): [ 0.  0.  0. -0. -0. -0.  0. -0. -0. -0.]
+Scaled feature stds  (should be ~1): [1. 1. 1. 1. 1. 1. 1. 1. 1. 1.]
+Random Forest trained!
+5-Fold CV F1 scores: [0.808 0.878 0.792 0.821 0.804]
+Mean CV F1: 0.821 ± 0.030
+Accuracy:  0.9895  (98.95%)
+Precision: 0.8615  (of predicted failures, how many real?)
+Recall:    0.8235  (of real failures, how many caught?)
+F1 Score:  0.8421  (harmonic mean of precision/recall)
+ROC-AUC:   0.9675  (1.0 = perfect, 0.5 = random)
+Full Classification Report:
+              precision    recall  f1-score   support
+
+  No Failure       0.99      1.00      0.99      1932
+     Failure       0.86      0.82      0.84        68
+
+    accuracy                           0.99      2000
+   macro avg       0.93      0.91      0.92      2000
+weighted avg       0.99      0.99      0.99      2000
+
+Confusion Matrix:
+  True Neg  (correctly said OK):      1923
+  False Pos (false alarm):             9
+  False Neg (missed failure ← BAD):   12
+  True Pos  (correctly caught failure): 56
+Charts saved to models/evaluation_charts.png
+Anomalies detected: 400 (4.0%)
+Anomalies that are real failures: 89
+That is 26.3% of all failures
+All models saved:
+  models/evaluation_charts.png  (109 KB)
+  models/failure_model.pkl  (2751 KB)
+  models/iso_forest.pkl  (2886 KB)
+  models/label_encoder.pkl  (0 KB)
+  models/scaler.pkl  (1 KB)
+==================================================
+FINAL MODEL SUMMARY
+==================================================
+Dataset:        10,000 records, 339 failures
+Features used:  10
+Accuracy:       98.95%
+F1 Score:       0.8421
+ROC-AUC:        0.9675
+Recall:         0.8235  ← catches this % of real failures
+Anomalies:      400 (4.0%)
