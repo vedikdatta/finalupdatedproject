@@ -29,6 +29,11 @@ export default function Machine() {
     // Upload to backend so the Dashboard & AI Assistant get synced with this data
     const formData = new FormData();
     formData.append("file", file);
+    
+    const user = JSON.parse(localStorage.getItem("currentUser") || "{}");
+    const userEmail = user.email || "default";
+    formData.append("user_id", userEmail);
+
     try {
       await fetch("http://localhost:8000/upload", { method: "POST", body: formData });
     } catch (err) {
