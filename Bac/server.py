@@ -1,4 +1,4 @@
-"""
+  """
 FactoryPulse AI — Backend Server
 Loads pre-trained ML models, accepts CSV uploads, runs failure predictions,
 and provides an intelligent chat assistant that answers questions about the data.
@@ -36,7 +36,13 @@ print("[OK] Models loaded:", {
 })
 
 # ── in-memory store for the current session CSV ──────────────────────────────
-session_store: dict = {"df": None, "filename": None, "predictions": None, "summary": None}
+# Dictionary to store session data per user: user_id -> dict
+session_stores: dict = {}
+
+def get_session(user_id: str = "default"):
+    if user_id not in session_stores:
+        session_stores[user_id] = {"df": None, "filename": None, "predictions": None, "summary": None}
+    return session_stores[user_id]
 
 # ── FastAPI app ──────────────────────────────────────────────────────────────
 app = FastAPI(title="FactoryPulse AI Backend")
@@ -130,15 +136,16 @@ def clean_for_json(obj):
 DATASET_PATH = Path(__file__).parent / "current_dataset.csv"
 
 
-def process_dataframe(df, filename):
+def process_dataframe(df, filename, user_id="default"):
     df_eng = engineer_features(df)
     df_eng.fillna(0, inplace=True)
 
-    session_store["df"] = df_eng
-    session_store["filename"] = filename
-    session_store["predictions"] = None
-    session_store["anomalies"] = None
-    session_store["summary"] = build_summary(df_eng)
+    session = get_session(user_id)
+    session["df"] = df_eng
+    session["filename"] = filename
+    session["predictions"] = None
+    session["anomalies"] = None
+    session["summary"] = build_summary(df_eng)
 
     predictions = None
     anomalies = None
@@ -174,9 +181,9 @@ def process_dataframe(df, filename):
         df_eng["_anomaly"] = anom_preds
 
     summary = build_summary(df_eng)
-    session_store["predictions"] = predictions
-    session_store["anomalies"] = anomalies
-    session_store["summary"] = summary
+    session["predictions"] = predictions
+    session["anomalies"] = anomalies
+    session["summary"] = summary
 
     return {
         "success": True,
@@ -191,17 +198,29 @@ def process_dataframe(df, filename):
     }
 
 
-def load_saved_dataset():
-    if DATASET_PATH.exists():
+def get_dataset_path(user_id="default"):
+    return Path(__file__).parent / f"dataset_{user_id}.csv"
+
+def load_saved_datasets():
+    for file in Path(__file__).parent.glob("dataset_*.csv"):
+        user_id = file.stem.replace("dataset_", "")
+        try:
+            df = pd.read_csv(file)
+            process_dataframe(df, file.name, user_id=user_id)
+            print(f"[OK] Loaded saved dataset for user: {user_id}")
+        except Exception as e:
+            print(f"[Error] Failed to load saved dataset for {user_id}: {e}")
+    # Fallback to old current_dataset.csv if it exists
+    if DATASET_PATH.exists() and not Path(__file__).parent.joinpath("dataset_default.csv").exists():
         try:
             df = pd.read_csv(DATASET_PATH)
-            process_dataframe(df, "current_dataset.csv")
-            print("[OK] Loaded saved dataset from disk into session.")
+            process_dataframe(df, "current_dataset.csv", user_id="default")
+            print("[OK] Loaded legacy saved dataset into default session.")
         except Exception as e:
-            print(f"[Error] Failed to load saved dataset: {e}")
+            pass
 
 
-load_saved_dataset()
+load_saved_datasets()
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
@@ -216,16 +235,17 @@ def health():
 
 
 @app.post("/upload")
-async def upload_csv(file: UploadFile = File(...)):
+async def upload_csv(file: UploadFile = File(...), user_id: str = Form("default")):
     """Upload a CSV, save it to disk, run predictions, store in session."""
     try:
         raw = await file.read()
-
-        with open(DATASET_PATH, "wb") as f:
+        
+        save_path = get_dataset_path(user_id)
+        with open(save_path, "wb") as f:
             f.write(raw)
 
         df = pd.read_csv(io.BytesIO(raw))
-        result = process_dataframe(df, file.filename)
+        result = process_dataframe(df, file.filename, user_id=user_id)
         return clean_for_json(result)
     except Exception as e:
         traceback.print_exc()
@@ -233,8 +253,9 @@ async def upload_csv(file: UploadFile = File(...)):
 
 
 @app.get("/dashboard-data")
-def get_dashboard_data():
-    df = session_store.get("df")
+def get_dashboard_data(user: str = "default"):
+    session = get_session(user)
+    df = session.get("df")
     if df is None:
         return {"has_data": False}
 
@@ -327,6 +348,9 @@ def get_dashboard_data():
                 "read": False,
             })
 
+        csv_data = df.head(15).to_dict(orient="records")
+        csv_headers = list(df.columns)
+
         return clean_for_json({
             "has_data": True,
             "stats": {
@@ -338,6 +362,9 @@ def get_dashboard_data():
             "productionData": productionData,
             "machines": machines,
             "alertsData": alertsData,
+            "csvData": csv_data,
+            "csvHeaders": csv_headers,
+            "filename": session.get("filename"),
         })
     except Exception as e:
         traceback.print_exc()
@@ -345,9 +372,10 @@ def get_dashboard_data():
 
 
 @app.get("/prediction-data")
-def get_prediction_data():
+def get_prediction_data(user: str = "default"):
     try:
-        df = session_store.get("df")
+        session = get_session(user)
+        df = session.get("df")
         if df is None or len(df) == 0:
             return {"has_data": False}
 
@@ -388,7 +416,7 @@ def get_prediction_data():
 
         return clean_for_json({
             "has_data": True,
-            "filename": session_store.get("filename", ""),
+            "filename": session.get("filename", ""),
             "plantData": plantData,
             "heatmapData": heatmap_data,
         })
@@ -401,19 +429,21 @@ def get_prediction_data():
 
 class ChatRequest(BaseModel):
     question: str
+    user_id: Optional[str] = "default"
 
 
 @app.post("/chat")
 async def chat(req: ChatRequest):
     """Answer questions about the uploaded CSV data using statistical analysis."""
-    df = session_store.get("df")
+    session = get_session(req.user_id)
+    df = session.get("df")
     question = req.question.lower().strip()
 
     if df is None:
         return {"answer": "Please upload a CSV file first so I can analyze your data and answer questions about it."}
 
     try:
-        answer = generate_answer(question, df, session_store)
+        answer = generate_answer(question, df, session)
         return {"answer": answer}
     except Exception as e:
         traceback.print_exc()
@@ -674,4 +704,4 @@ def generate_answer(question: str, df: pd.DataFrame, store: dict) -> str:
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000) 
