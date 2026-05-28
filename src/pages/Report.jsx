@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -9,11 +11,13 @@ import {
   ChevronUp, BarChart2, PieChart as PieIcon, TrendingUp,
   AlertTriangle, CheckCircle, Clock, Factory, RefreshCw,
   Eye, EyeOff, GripVertical, Settings, X, Save, Upload,
-  Cpu, Zap, Activity, ThermometerSun, Gauge, BarChart3
+  Cpu, Zap, Activity, ThermometerSun, Gauge, BarChart3,
+  Mail, Send
 } from 'lucide-react';
 
 // ─── API Base URL ──────────────────────────────────────────────────────────────
 const API_BASE = 'http://localhost:8000';
+const AUTH_API_BASE = 'http://localhost:5000';
 
 // ─── Tokens ───────────────────────────────────────────────────────────────────
 const T = {
@@ -110,19 +114,19 @@ const SectionHeader = ({ icon, title, visible, onToggle, onRemove }) => (
 
 // ────────────────────────── SECTION COMPONENTS ────────────────────────────────
 
-// KPI Summary — uses /dashboard-data stats + /prediction-data plantData
+// KPI Summary
 const KPIGrid = ({ data }) => {
   const { dashData, predData } = data;
   const stats = dashData?.stats || {};
   const plant = predData?.plantData || {};
 
   const cards = [
-    { label: 'Total Samples', value: stats.totalProduction ?? '—', icon: BarChart3, color: T.accent },
-    { label: 'Machine Efficiency', value: stats.machineEfficiency != null ? `${fmt(stats.machineEfficiency)}%` : '—', icon: Cpu, color: T.green },
-    { label: 'Defect Rate', value: stats.defectRate != null ? `${fmt(stats.defectRate)}%` : '—', icon: AlertTriangle, color: T.red },
-    { label: 'Energy Usage', value: stats.energyUsage != null ? `${stats.energyUsage} kW` : '—', icon: Zap, color: T.yellow },
-    { label: 'Avg Temp', value: plant.avgTemp != null ? `${fmt(plant.avgTemp)}°C` : '—', icon: ThermometerSun, color: T.orange },
-    { label: 'Overall Efficiency', value: plant.overallEfficiency != null ? `${fmt(plant.overallEfficiency)}%` : '—', icon: Activity, color: T.purple },
+    { label: 'Total Samples',      value: stats.totalProduction ?? '—',                              icon: BarChart3,      color: T.accent  },
+    { label: 'Machine Efficiency', value: stats.machineEfficiency != null ? `${fmt(stats.machineEfficiency)}%` : '—', icon: Cpu,         color: T.green   },
+    { label: 'Defect Rate',        value: stats.defectRate        != null ? `${fmt(stats.defectRate)}%`        : '—', icon: AlertTriangle,color: T.red     },
+    { label: 'Energy Usage',       value: stats.energyUsage       != null ? `${stats.energyUsage} kW`          : '—', icon: Zap,         color: T.yellow  },
+    { label: 'Avg Temp',           value: plant.avgTemp           != null ? `${fmt(plant.avgTemp)}°C`          : '—', icon: ThermometerSun,color: T.orange },
+    { label: 'Overall Efficiency', value: plant.overallEfficiency != null ? `${fmt(plant.overallEfficiency)}%` : '—', icon: Activity,    color: T.purple  },
   ];
 
   return (
@@ -132,7 +136,7 @@ const KPIGrid = ({ data }) => {
   );
 };
 
-// Production Chart — uses /dashboard-data productionData
+// Production Chart
 const ProductionChart = ({ data }) => {
   const chartData = data.dashData?.productionData || [];
   if (!chartData.length) return <EmptyState msg="No production data available" />;
@@ -145,13 +149,13 @@ const ProductionChart = ({ data }) => {
         <Tooltip content={<CustomTooltip />} />
         <Legend wrapperStyle={{ color: T.textSub, fontSize: 11 }} />
         <Bar dataKey="actual" name="Actual" fill={T.accent} radius={[4, 4, 0, 0]} barSize={24} />
-        <Bar dataKey="target" name="Target" fill={T.green} radius={[4, 4, 0, 0]} barSize={24} opacity={0.6} />
+        <Bar dataKey="target" name="Target" fill={T.green}  radius={[4, 4, 0, 0]} barSize={24} opacity={0.6} />
       </BarChart>
     </ResponsiveContainer>
   );
 };
 
-// Sensor / Heatmap trends — uses /prediction-data heatmapData
+// Sensor Trends
 const SensorChart = ({ data }) => {
   const chartData = data.predData?.heatmapData || [];
   if (!chartData.length) return <EmptyState msg="No sensor trend data available" />;
@@ -173,14 +177,13 @@ const SensorChart = ({ data }) => {
   );
 };
 
-// Machine Status / Risk — uses /dashboard-data machines
+// Machine Status
 const MachineStatus = ({ data }) => {
   const machines = data.dashData?.machines || [];
   if (!machines.length) return <EmptyState msg="No machine data available" />;
 
   const pieData = machines.map(m => ({
-    name: m.name, value: Math.round(m.efficiency),
-    color: m.color,
+    name: m.name, value: Math.round(m.efficiency), color: m.color,
   }));
 
   return (
@@ -217,7 +220,7 @@ const MachineStatus = ({ data }) => {
   );
 };
 
-// Alerts — uses /dashboard-data alertsData
+// Alerts
 const AlertsTable = ({ data }) => {
   const alerts = data.dashData?.alertsData || [];
   if (!alerts.length) return <EmptyState msg="No alerts available" />;
@@ -245,34 +248,32 @@ const AlertsTable = ({ data }) => {
   );
 };
 
-// Failure Predictions summary — uses uploadResult predictions
+// Failure Predictions
 const FailureSummary = ({ data }) => {
   const pred = data.uploadResult?.predictions;
   const anom = data.uploadResult?.anomalies;
   if (!pred) return <EmptyState msg="Upload a dataset to view failure predictions" />;
 
   const total = pred.failure_count + pred.no_failure_count;
-  const rate = total > 0 ? (pred.failure_count / total * 100).toFixed(1) : 0;
+  const rate  = total > 0 ? (pred.failure_count / total * 100).toFixed(1) : 0;
 
   const barData = [
     { name: 'No Failure', count: pred.no_failure_count, fill: T.green },
-    { name: 'Failure',    count: pred.failure_count,    fill: T.red },
+    { name: 'Failure',    count: pred.failure_count,    fill: T.red   },
   ];
-  if (anom) {
-    barData.push({ name: 'Anomalies', count: anom.anomaly_count, fill: T.yellow });
-  }
+  if (anom) barData.push({ name: 'Anomalies', count: anom.anomaly_count, fill: T.yellow });
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10 }}>
-        <StatCard label="Predicted Failures" value={pred.failure_count} icon={AlertTriangle} color={T.red} />
-        <StatCard label="Normal Samples"     value={pred.no_failure_count} icon={CheckCircle} color={T.green} />
-        <StatCard label="Failure Rate"        value={`${rate}%`} icon={Activity} color={rate > 15 ? T.red : rate > 5 ? T.yellow : T.green} />
+        <StatCard label="Predicted Failures" value={pred.failure_count}    icon={AlertTriangle} color={T.red} />
+        <StatCard label="Normal Samples"     value={pred.no_failure_count} icon={CheckCircle}   color={T.green} />
+        <StatCard label="Failure Rate"        value={`${rate}%`}           icon={Activity}      color={rate > 15 ? T.red : rate > 5 ? T.yellow : T.green} />
       </div>
       {anom && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10 }}>
-          <StatCard label="Anomalies Detected" value={anom.anomaly_count} icon={AlertTriangle} color={T.yellow} />
-          <StatCard label="Normal (Isolation Forest)" value={anom.normal_count} icon={CheckCircle} color={T.green} />
+          <StatCard label="Anomalies Detected"          value={anom.anomaly_count} icon={AlertTriangle} color={T.yellow} />
+          <StatCard label="Normal (Isolation Forest)"   value={anom.normal_count}  icon={CheckCircle}   color={T.green} />
         </div>
       )}
       <ResponsiveContainer width="100%" height={160}>
@@ -290,7 +291,7 @@ const FailureSummary = ({ data }) => {
   );
 };
 
-// Dataset Info — uses uploadResult summary
+// Dataset Info
 const DatasetInfo = ({ data }) => {
   const res = data.uploadResult;
   if (!res) return <EmptyState msg="Upload a dataset to view column statistics" />;
@@ -325,7 +326,7 @@ const DatasetInfo = ({ data }) => {
                     padding: '9px 10px',
                     background: i % 2 === 0 ? T.bgCard2 : T.bgCard,
                     borderTop: `1px solid ${T.border}`, borderBottom: `1px solid ${T.border}`,
-                    borderLeft: j === 0 ? `1px solid ${T.border}` : 'none',
+                    borderLeft:  j === 0 ? `1px solid ${T.border}` : 'none',
                     borderRight: j === 5 ? `1px solid ${T.border}` : 'none',
                     borderRadius: j === 0 ? '6px 0 0 6px' : j === 5 ? '0 6px 6px 0' : 0,
                   }}>{cell}</td>
@@ -339,25 +340,25 @@ const DatasetInfo = ({ data }) => {
   );
 };
 
-// Plant Status — uses /prediction-data plantData
+// Plant Status
 const PlantStatus = ({ data }) => {
   const plant = data.predData?.plantData;
   if (!plant) return <EmptyState msg="No plant status data available" />;
 
   const indicators = [
-    { label: 'Avg Temp',           value: `${fmt(plant.avgTemp)}°C`,    color: plant.avgTemp > 80 ? T.red : T.green },
-    { label: 'Max Vibration',      value: `${fmt(plant.maxVibration)} mm/s`, color: plant.maxVibration > 4 ? T.red : T.yellow },
-    { label: 'Avg Pressure',       value: `${fmt(plant.avgPressure)} PSI`, color: T.accent },
-    { label: 'Efficiency',         value: `${fmt(plant.overallEfficiency)}%`, color: plant.overallEfficiency > 80 ? T.green : T.red },
-    { label: 'Maint. Overdue',     value: plant.maintenanceOverdueCount, color: plant.maintenanceOverdueCount > 0 ? T.red : T.green },
-    { label: 'Data Timestamp',     value: plant.timestamp,              color: T.textSub },
+    { label: 'Avg Temp',       value: `${fmt(plant.avgTemp)}°C`,          color: plant.avgTemp > 80 ? T.red : T.green },
+    { label: 'Max Vibration',  value: `${fmt(plant.maxVibration)} mm/s`,  color: plant.maxVibration > 4 ? T.red : T.yellow },
+    { label: 'Avg Pressure',   value: `${fmt(plant.avgPressure)} PSI`,    color: T.accent },
+    { label: 'Efficiency',     value: `${fmt(plant.overallEfficiency)}%`, color: plant.overallEfficiency > 80 ? T.green : T.red },
+    { label: 'Maint. Overdue', value: plant.maintenanceOverdueCount,      color: plant.maintenanceOverdueCount > 0 ? T.red : T.green },
+    { label: 'Timestamp',      value: plant.timestamp,                    color: T.textSub },
   ];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', gap: 10, marginBottom: 4 }}>
-        {plant.errorState && <Badge label="ERROR STATE DETECTED" color={T.red} />}
-        {plant.warningState && <Badge label="ANOMALIES PRESENT" color={T.yellow} />}
+        {plant.errorState   && <Badge label="ERROR STATE DETECTED" color={T.red} />}
+        {plant.warningState && <Badge label="ANOMALIES PRESENT"    color={T.yellow} />}
         {!plant.errorState && !plant.warningState && <Badge label="ALL SYSTEMS NOMINAL" color={T.green} />}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
@@ -381,34 +382,104 @@ const EmptyState = ({ msg }) => (
 
 // ─── All available sections ───────────────────────────────────────────────────
 const ALL_SECTIONS = [
-  { id: 'kpi',         label: 'KPI Summary',          icon: <BarChart2 size={15} />,    component: KPIGrid },
-  { id: 'failures',    label: 'Failure Predictions',  icon: <AlertTriangle size={15} />, component: FailureSummary },
-  { id: 'production',  label: 'Production Chart',     icon: <TrendingUp size={15} />,   component: ProductionChart },
-  { id: 'sensor',      label: 'Sensor Trends',        icon: <Activity size={15} />,     component: SensorChart },
-  { id: 'machines',    label: 'Machine Status',       icon: <Cpu size={15} />,          component: MachineStatus },
-  { id: 'alerts',      label: 'System Alerts',        icon: <Zap size={15} />,          component: AlertsTable },
-  { id: 'plant',       label: 'Plant Health',         icon: <Gauge size={15} />,        component: PlantStatus },
-  { id: 'dataset',     label: 'Dataset Statistics',   icon: <BarChart3 size={15} />,    component: DatasetInfo },
+  { id: 'kpi',        label: 'KPI Summary',         icon: <BarChart2 size={15} />,     component: KPIGrid        },
+  { id: 'failures',   label: 'Failure Predictions',  icon: <AlertTriangle size={15} />, component: FailureSummary },
+  { id: 'production', label: 'Production Chart',     icon: <TrendingUp size={15} />,    component: ProductionChart},
+  { id: 'sensor',     label: 'Sensor Trends',        icon: <Activity size={15} />,      component: SensorChart    },
+  { id: 'machines',   label: 'Machine Status',       icon: <Cpu size={15} />,           component: MachineStatus  },
+  { id: 'alerts',     label: 'System Alerts',        icon: <Zap size={15} />,           component: AlertsTable    },
+  { id: 'plant',      label: 'Plant Health',         icon: <Gauge size={15} />,         component: PlantStatus    },
+  { id: 'dataset',    label: 'Dataset Statistics',   icon: <BarChart3 size={15} />,     component: DatasetInfo    },
 ];
+
+// ─── Email Toast Notification ─────────────────────────────────────────────────
+const EmailToast = ({ status, email, onClose }) => {
+  const configs = {
+    sending:  { color: T.accent,  icon: <Send size={14} />,      text: `Preparing report PDF…`               },
+    success:  { color: T.green,   icon: <CheckCircle size={14} />,text: `Report emailed to ${email}`          },
+    error:    { color: T.red,     icon: <AlertTriangle size={14} />, text: 'Failed to send report email'      },
+  };
+  const c = configs[status];
+  if (!c) return null;
+
+  return (
+    <div style={{
+      position: 'fixed', bottom: 24, right: 24, zIndex: 999,
+      background: T.bgCard, border: `1px solid ${c.color}55`,
+      borderLeft: `3px solid ${c.color}`,
+      borderRadius: 10, padding: '12px 16px',
+      display: 'flex', alignItems: 'center', gap: 10,
+      boxShadow: `0 8px 32px rgba(0,0,0,.5), 0 0 0 1px ${c.color}22`,
+      minWidth: 280, maxWidth: 360,
+      animation: 'slideIn .3s ease-out',
+    }}>
+      <span style={{ color: c.color, display: 'flex', flexShrink: 0 }}>{c.icon}</span>
+      <div style={{ flex: 1 }}>
+        <p style={{ fontSize: 11, fontWeight: 700, color: T.text, marginBottom: 2 }}>
+          {status === 'sending' ? 'Generating Report' : status === 'success' ? 'Report Sent!' : 'Email Error'}
+        </p>
+        <p style={{ fontSize: 11, color: T.textSub }}>{c.text}</p>
+      </div>
+      {status !== 'sending' && (
+        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, display: 'flex', padding: 2 }}>
+          <X size={13} />
+        </button>
+      )}
+      {status === 'sending' && (
+        <div style={{
+          width: 14, height: 14, border: `2px solid ${T.accent}44`,
+          borderTop: `2px solid ${T.accent}`, borderRadius: '50%',
+          animation: 'spin 0.8s linear infinite', flexShrink: 0,
+        }} />
+      )}
+    </div>
+  );
+};
 
 // ─── Main Report Component ────────────────────────────────────────────────────
 export default function ReportBuilder() {
-  const [dashData, setDashData] = useState(null);
-  const [predData, setPredData] = useState(null);
-  const [uploadResult, setUploadResult] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState(null);
-  const [sections, setSections] = useState(ALL_SECTIONS.map(s => ({ ...s, visible: true })));
-  const [showPanel, setShowPanel] = useState(false);
-  const [title, setTitle] = useState('FactoryPulse — Manufacturing Report');
-  const [editingTitle, setEditingTitle] = useState(false);
-  const [period, setPeriod] = useState(new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }));
-  const [generatedAt] = useState(new Date().toLocaleString());
-  const [saved, setSaved] = useState(false);
-  const [dragIdx, setDragIdx] = useState(null);
-  const [dragOver, setDragOver] = useState(null);
+  const [dashData,      setDashData]      = useState(null);
+  const [predData,      setPredData]      = useState(null);
+  const [uploadResult,  setUploadResult]  = useState(null);
+  const [loading,       setLoading]       = useState(false);
+  const [uploading,     setUploading]     = useState(false);
+  const [error,         setError]         = useState(null);
+  const [sections,      setSections]      = useState(ALL_SECTIONS.map(s => ({ ...s, visible: true })));
+  const [showPanel,     setShowPanel]     = useState(false);
+  const [title,         setTitle]         = useState('FactoryPulse — Manufacturing Report');
+  const [editingTitle,  setEditingTitle]  = useState(false);
+  const [period,        setPeriod]        = useState(new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }));
+  const [generatedAt]                     = useState(new Date().toLocaleString());
+  const [dragIdx,       setDragIdx]       = useState(null);
+  const [dragOver,      setDragOver]      = useState(null);
+
+  // ── Email toast state ──────────────────────────────────────────────────────
+  const [emailToast,    setEmailToast]    = useState(null); // { status: 'sending'|'success'|'error', email }
+  const toastTimerRef                     = useRef(null);
+
   const fileInputRef = useRef(null);
+  const reportRef    = useRef(null);
+
+  // ── Get logged-in user from localStorage ───────────────────────────────────
+  const getLoggedInEmail = () => {
+    try {
+      const raw = localStorage.getItem('currentUser');
+      if (!raw) return null;
+      const user = JSON.parse(raw);
+      return user?.email || null;
+    } catch {
+      return null;
+    }
+  };
+
+  // ── Show toast helper ──────────────────────────────────────────────────────
+  const showToast = (status, email = '') => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setEmailToast({ status, email });
+    if (status === 'success' || status === 'error') {
+      toastTimerRef.current = setTimeout(() => setEmailToast(null), 5000);
+    }
+  };
 
   // ── Fetch data ──────────────────────────────────────────────────────────────
   const fetchAll = useCallback(async () => {
@@ -432,25 +503,92 @@ export default function ReportBuilder() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
+  // ── Auto-generate & email PDF ──────────────────────────────────────────────
+  const generateAndEmailPdf = useCallback(async (userEmail, uploadedFilename) => {
+    if (!reportRef.current) return;
+
+    showToast('sending', userEmail);
+
+    try {
+      // 1. Capture the report DOM
+      const canvas = await html2canvas(reportRef.current, {
+        scale: 1.5,
+        useCORS: true,
+        backgroundColor: '#0d1117',
+        logging: false,
+        allowTaint: true,
+      });
+
+      // 2. Build PDF
+      const imgData   = canvas.toDataURL('image/jpeg', 0.85);
+      const pdf       = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const pageWidth  = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth   = pageWidth;
+      const imgHeight  = (canvas.height * imgWidth) / canvas.width;
+
+      let yOffset = 0;
+      while (yOffset < imgHeight) {
+        pdf.addImage(imgData, 'JPEG', 0, -yOffset, imgWidth, imgHeight);
+        yOffset += pageHeight;
+        if (yOffset < imgHeight) pdf.addPage();
+      }
+
+      const pdfBase64 = pdf.output('datauristring').split(',')[1];
+      const filename  = `FactoryPulse-Report-${new Date().toISOString().slice(0, 10)}.pdf`;
+
+      // 3. POST to auth backend to send email
+      const mailRes = await fetch(`${AUTH_API_BASE}/api/email-report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: userEmail, pdfBase64, filename }),
+      });
+
+      if (mailRes.ok) {
+        showToast('success', userEmail);
+      } else {
+        const errJson = await mailRes.json().catch(() => ({}));
+        console.warn('Report email backend error:', errJson.message);
+        showToast('error', userEmail);
+      }
+    } catch (err) {
+      console.error('PDF generation / email error:', err);
+      showToast('error', userEmail);
+    }
+  }, []);
+
   // ── Upload CSV ──────────────────────────────────────────────────────────────
   const handleUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
     setUploading(true);
     setError(null);
+
     const form = new FormData();
     form.append('file', file);
+
     try {
-      const res = await fetch(`${API_BASE}/upload`, { method: 'POST', body: form });
+      const res  = await fetch(`${API_BASE}/upload`, { method: 'POST', body: form });
       const json = await res.json();
+
       if (json.success) {
         setUploadResult(json);
         await fetchAll();
+
+        // ── Auto-email after charts have re-rendered ──────────────────────
+        const userEmail = getLoggedInEmail();
+        if (userEmail) {
+          // Wait 3 s for recharts to finish painting before html2canvas captures
+          setTimeout(() => generateAndEmailPdf(userEmail, file.name), 3000);
+        } else {
+          console.warn('No logged-in user email found in localStorage — skipping auto-email.');
+        }
       } else {
         setError(`Upload failed: ${json.error}`);
       }
-    } catch (e) {
-      setError(`Upload error: ${e.message}`);
+    } catch (err) {
+      setError(`Upload error: ${err.message}`);
     } finally {
       setUploading(false);
       e.target.value = '';
@@ -475,8 +613,8 @@ export default function ReportBuilder() {
   };
 
   const removedSections = ALL_SECTIONS.filter(a => !sections.find(s => s.id === a.id));
-  const reportData = { dashData, predData, uploadResult };
-  const hasData = !!(dashData?.has_data || predData?.has_data || uploadResult);
+  const reportData      = { dashData, predData, uploadResult };
+  const hasData         = !!(dashData?.has_data || predData?.has_data || uploadResult);
 
   return (
     <div style={{ minHeight: '100vh', background: T.bg, fontFamily: "'Inter', 'DM Sans', sans-serif", color: T.text }}>
@@ -486,7 +624,9 @@ export default function ReportBuilder() {
         ::-webkit-scrollbar{width:5px;height:5px}
         ::-webkit-scrollbar-track{background:${T.bg}}
         ::-webkit-scrollbar-thumb{background:${T.border};border-radius:4px}
-        @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes fadeUp  {from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes slideIn {from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+        @keyframes spin    {to{transform:rotate(360deg)}}
         .sec{animation:fadeUp .3s ease-out both}
         @media print{
           .no-print{display:none!important}
@@ -495,6 +635,15 @@ export default function ReportBuilder() {
         }
         button:hover{opacity:0.85}
       `}</style>
+
+      {/* ── Email Toast ── */}
+      {emailToast && (
+        <EmailToast
+          status={emailToast.status}
+          email={emailToast.email}
+          onClose={() => setEmailToast(null)}
+        />
+      )}
 
       {/* ── Toolbar ── */}
       <div className="no-print" style={{
@@ -509,14 +658,16 @@ export default function ReportBuilder() {
           </div>
           <div>
             <p style={{ fontSize: 13, fontWeight: 700, color: T.text }}>FactoryPulse Report Builder</p>
-            <p style={{ fontSize: 10, color: T.textMuted }}>Live data from backend · Drag to reorder · Export to PDF</p>
+            <p style={{ fontSize: 10, color: T.textMuted }}>
+              Live data · Drag to reorder · PDF auto-emailed on CSV upload
+            </p>
           </div>
         </div>
 
-        {/* Status indicator */}
+        {/* Status indicators */}
         {loading && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: T.textSub }}>
-            <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> Loading...
+            <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> Loading…
           </div>
         )}
         {!loading && !hasData && !error && (
@@ -526,6 +677,21 @@ export default function ReportBuilder() {
           <span style={{ fontSize: 11, color: T.green }}>● Live data</span>
         )}
 
+        {/* Logged-in user email pill */}
+        {(() => {
+          const em = getLoggedInEmail();
+          return em ? (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              padding: '4px 10px', borderRadius: 20,
+              background: T.accentGlow, border: `1px solid ${T.accent}33`,
+              fontSize: 10, color: T.accent, fontFamily: "'JetBrains Mono',monospace",
+            }}>
+              <Mail size={10} /> {em}
+            </div>
+          ) : null;
+        })()}
+
         <button onClick={fetchAll} style={{
           display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 6,
           background: 'none', border: `1px solid ${T.border}`, color: T.textSub, cursor: 'pointer', fontSize: 11,
@@ -533,17 +699,24 @@ export default function ReportBuilder() {
           <RefreshCw size={12} /> Refresh
         </button>
 
-        <button onClick={() => fileInputRef.current?.click()} disabled={uploading} style={{
-          display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 6,
-          background: T.accent + '22', border: `1px solid ${T.accent}55`, color: T.accent, cursor: 'pointer', fontSize: 11, fontWeight: 600,
-        }}>
-          <Upload size={12} /> {uploading ? 'Uploading…' : 'Upload CSV'}
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 6,
+            background: T.accent + '22', border: `1px solid ${T.accent}55`,
+            color: T.accent, cursor: uploading ? 'not-allowed' : 'pointer',
+            fontSize: 11, fontWeight: 600, opacity: uploading ? 0.7 : 1,
+          }}>
+          <Upload size={12} />
+          {uploading ? 'Uploading…' : 'Upload CSV'}
         </button>
         <input ref={fileInputRef} type="file" accept=".csv" onChange={handleUpload} style={{ display: 'none' }} />
 
         <button onClick={() => setShowPanel(p => !p)} style={{
           display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 6,
-          background: showPanel ? T.accent + '22' : 'none', border: `1px solid ${showPanel ? T.accent : T.border}`,
+          background: showPanel ? T.accent + '22' : 'none',
+          border: `1px solid ${showPanel ? T.accent : T.border}`,
           color: showPanel ? T.accent : T.textSub, cursor: 'pointer', fontSize: 11,
         }}>
           <Settings size={12} /> Sections
@@ -598,14 +771,21 @@ export default function ReportBuilder() {
 
       {/* ── Error Banner ── */}
       {error && (
-        <div style={{ background: T.red + '22', border: `1px solid ${T.red}44`, borderRadius: 8, padding: '10px 16px', margin: '12px 20px', fontSize: 12, color: T.red }}>
+        <div style={{
+          background: T.red + '22', border: `1px solid ${T.red}44`,
+          borderRadius: 8, padding: '10px 16px', margin: '12px 20px',
+          fontSize: 12, color: T.red,
+        }}>
           {error}
         </div>
       )}
 
-      {/* ── Report page ── */}
-      <div className="print-page" style={{ maxWidth: 980, margin: '20px auto', padding: '0 20px 48px' }}>
-
+      {/* ── Report Page (captured by html2canvas) ── */}
+      <div
+        ref={reportRef}
+        className="print-page"
+        style={{ maxWidth: 980, margin: '20px auto', padding: '0 20px 48px' }}
+      >
         {/* Cover */}
         <div style={{
           background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 12,
@@ -618,30 +798,53 @@ export default function ReportBuilder() {
                 <div style={{ width: 38, height: 38, borderRadius: 8, background: 'linear-gradient(135deg,#388bfd,#6e40c9)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <Factory size={18} color="#fff" />
                 </div>
-                <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1.4, color: T.textMuted }}>Manufacturing Intelligence Report</span>
+                <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1.4, color: T.textMuted }}>
+                  Manufacturing Intelligence Report
+                </span>
               </div>
+
               {editingTitle ? (
-                <input value={title} onChange={e => setTitle(e.target.value)}
-                  style={{ fontSize: 20, fontWeight: 800, color: T.text, background: T.bgCard2, border: `1px solid ${T.accent}`, borderRadius: 6, padding: '4px 10px', fontFamily: 'Inter,sans-serif', outline: 'none', width: '100%', marginBottom: 8 }}
-                  autoFocus onBlur={() => setEditingTitle(false)} onKeyDown={e => e.key === 'Enter' && setEditingTitle(false)}
+                <input
+                  value={title}
+                  onChange={e => setTitle(e.target.value)}
+                  style={{
+                    fontSize: 20, fontWeight: 800, color: T.text,
+                    background: T.bgCard2, border: `1px solid ${T.accent}`,
+                    borderRadius: 6, padding: '4px 10px',
+                    fontFamily: 'Inter,sans-serif', outline: 'none',
+                    width: '100%', marginBottom: 8,
+                  }}
+                  autoFocus
+                  onBlur={() => setEditingTitle(false)}
+                  onKeyDown={e => e.key === 'Enter' && setEditingTitle(false)}
                 />
               ) : (
-                <h1 onClick={() => setEditingTitle(true)} style={{ fontSize: 20, fontWeight: 800, color: T.text, marginBottom: 8, cursor: 'text', letterSpacing: -0.5 }}>
+                <h1
+                  onClick={() => setEditingTitle(true)}
+                  style={{ fontSize: 20, fontWeight: 800, color: T.text, marginBottom: 8, cursor: 'text', letterSpacing: -0.5 }}
+                >
                   {title} <span style={{ fontSize: 12, fontWeight: 400, color: T.textMuted }}>✎</span>
                 </h1>
               )}
+
               <div style={{ display: 'flex', gap: 16, fontSize: 11, color: T.textSub, flexWrap: 'wrap' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                   <Clock size={11} color={T.textMuted} />
-                  <input value={period} onChange={e => setPeriod(e.target.value)}
-                    style={{ border: 'none', background: 'none', fontSize: 11, color: T.textSub, fontFamily: 'Inter,sans-serif', cursor: 'text', outline: 'none', width: 110 }} />
+                  <input
+                    value={period}
+                    onChange={e => setPeriod(e.target.value)}
+                    style={{ border: 'none', background: 'none', fontSize: 11, color: T.textSub, fontFamily: 'Inter,sans-serif', cursor: 'text', outline: 'none', width: 110 }}
+                  />
                 </span>
                 <span>Generated: {generatedAt}</span>
-                {uploadResult && <span style={{ color: T.green }}>● {uploadResult.filename} · {uploadResult.rows} rows</span>}
+                {uploadResult && (
+                  <span style={{ color: T.green }}>● {uploadResult.filename} · {uploadResult.rows} rows</span>
+                )}
               </div>
             </div>
+
             <div style={{ textAlign: 'right', flexShrink: 0 }}>
-              {predData?.plantData && (
+              {predData?.plantData ? (
                 <>
                   <div style={{ fontSize: 10, color: T.textMuted, marginBottom: 2 }}>Overall Efficiency</div>
                   <div style={{ fontSize: 36, fontWeight: 800, color: T.accent, fontFamily: "'JetBrains Mono',monospace", lineHeight: 1 }}>
@@ -651,8 +854,7 @@ export default function ReportBuilder() {
                     {predData.plantData.errorState ? '⚠ Failures Detected' : '✓ No Critical Failures'}
                   </div>
                 </>
-              )}
-              {!predData?.plantData && (
+              ) : (
                 <div style={{ padding: '12px 16px', background: T.bgCard2, borderRadius: 8, border: `1px dashed ${T.border}` }}>
                   <p style={{ fontSize: 11, color: T.textMuted, textAlign: 'center' }}>Upload CSV to<br />see live metrics</p>
                 </div>
@@ -683,7 +885,8 @@ export default function ReportBuilder() {
               }}
             >
               <SectionHeader
-                icon={sec.icon} title={sec.label}
+                icon={sec.icon}
+                title={sec.label}
                 visible={sec.visible}
                 onToggle={() => toggleSection(sec.id)}
                 onRemove={() => removeSection(sec.id)}
@@ -697,7 +900,7 @@ export default function ReportBuilder() {
           );
         })}
 
-        {/* Add back */}
+        {/* Add removed sections back */}
         {removedSections.length > 0 && (
           <div className="no-print" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
             {removedSections.map(s => (
@@ -714,7 +917,11 @@ export default function ReportBuilder() {
         )}
 
         {/* Footer */}
-        <div style={{ marginTop: 24, padding: '14px 20px', borderRadius: 10, background: T.bgCard2, border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{
+          marginTop: 24, padding: '14px 20px', borderRadius: 10,
+          background: T.bgCard2, border: `1px solid ${T.border}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
           <span style={{ fontSize: 10, color: T.textMuted, fontFamily: "'JetBrains Mono',monospace" }}>
             FactoryPulse AI · Auto-generated · {generatedAt}
           </span>
