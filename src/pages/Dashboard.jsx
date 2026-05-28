@@ -162,12 +162,16 @@ export default function Dashboard() {
     stats: { totalProduction: 0, machineEfficiency: 0, energyUsage: 0, defectRate: 0 },
     productionData: [],
     machines: [],
-    alertsData: []
+    alertsData: [],
+    csvData: [],
+    csvHeaders: [],
+    filename: ""
   });
 
   const chatEndRef = useRef(null);
 
   const user = JSON.parse(localStorage.getItem("currentUser") || "{}");
+  const userEmail = user.email || "default";
 
   useEffect(() => {
     const t = setInterval(() => setTime(new Date()), 1000);
@@ -183,14 +187,17 @@ export default function Dashboard() {
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:8000/dashboard-data", { cache: "no-store" });
+      const res = await fetch(`http://localhost:8000/dashboard-data?user=${encodeURIComponent(userEmail)}`, { cache: "no-store" });
       const data = await res.json();
       if (data.has_data) {
         setDbData({
           stats: data.stats,
           productionData: data.productionData,
           machines: data.machines,
-          alertsData: data.alertsData
+          alertsData: data.alertsData,
+          csvData: data.csvData || [],
+          csvHeaders: data.csvHeaders || [],
+          filename: data.filename || ""
         });
         setAlerts(data.alertsData);
       }
@@ -205,6 +212,7 @@ export default function Dashboard() {
     if (!file) return;
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("user_id", userEmail);
     try {
       await fetch("http://localhost:8000/upload", { method: "POST", body: formData });
       fetchDashboardData();
@@ -227,7 +235,7 @@ export default function Dashboard() {
       const res = await fetch("http://localhost:8000/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: userMsg })
+        body: JSON.stringify({ question: userMsg, user_id: userEmail })
       });
       const data = await res.json();
       setMessages(prev => [...prev, { role: "bot", text: data.answer }]);
@@ -349,6 +357,24 @@ export default function Dashboard() {
             )}
 
           </div>
+
+          {/* DATASET FILENAME BANNER */}
+          {dbData.filename && (
+            <div style={{ marginTop: 6, marginBottom: 6, background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 14, padding: "14px 18px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 10, background: "rgba(99,102,241,0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <span style={{ fontSize: 16 }}>📊</span>
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, color: textMuted, fontWeight: 600, letterSpacing: 0.5, textTransform: "uppercase" }}>Current Active Dataset</div>
+                  <div style={{ fontSize: 14, color: textColor, fontWeight: 700, marginTop: 2 }}>{dbData.filename}</div>
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: "#10b981", display: "flex", alignItems: "center", gap: 4, fontWeight: 600 }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#10b981" }} /> Synced & Active
+              </div>
+            </div>
+          )}
 
           <div className="mid-row" style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
             <div style={{ flex: "2 1 340px", background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 14, padding: "18px 16px" }}>
