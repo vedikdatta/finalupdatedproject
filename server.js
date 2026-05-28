@@ -5,12 +5,14 @@ import bcrypt from "bcryptjs";
 import nodemailer from "nodemailer";
 import crypto from "crypto";
 import dotenv from "dotenv";
+import PDFDocument from 'pdfkit';
 
 dotenv.config();
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 const PORT    = process.env.PORT     || 5000;
 const MONGO_URI = process.env.MONGO_URI;
@@ -143,6 +145,51 @@ const sendOtpEmail = async (toEmail, otp) => {
 // ROUTES
 // ======================
 
+// ── EMAIL REPORT (PDF attachment) ─────────────────────────────────────────
+app.post("/api/email-report", async (req, res) => {
+  try {
+    const { email, pdfBase64, filename } = req.body;
+
+    if (!email || !pdfBase64) {
+      return res.status(400).json({ message: "Email and PDF data are required" });
+    }
+
+    const pdfBuffer = Buffer.from(pdfBase64, "base64");
+
+    await transporter.sendMail({
+      from: `"FactoryPulse AI" <${process.env.MAIL_USER}>`,
+      to: email,
+      subject: "Your FactoryPulse Manufacturing Report",
+      html: `
+        <div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;padding:30px;
+                    border:1px solid #e5e7eb;border-radius:12px;">
+          <h2 style="color:#3b82f6;margin-bottom:8px;">FactoryPulse AI — Report Ready</h2>
+          <p style="color:#374151;">Your manufacturing report has been auto-generated after your latest dataset upload.</p>
+          <p style="color:#374151;margin-top:12px;">Please find your PDF report attached to this email.</p>
+          <p style="color:#6b7280;font-size:13px;margin-top:24px;">
+            Generated: ${new Date().toLocaleString()}<br/>
+            File: ${filename || "manufacturing-report.pdf"}
+          </p>
+          <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0"/>
+          <p style="color:#9ca3af;font-size:11px;">This report was automatically triggered by a CSV upload in your FactoryPulse dashboard.</p>
+        </div>
+      `,
+      attachments: [
+        {
+          filename: filename || "manufacturing-report.pdf",
+          content: pdfBuffer,
+          contentType: "application/pdf",
+        },
+      ],
+    });
+
+    console.log(`📄 Report PDF emailed to ${email}`);
+    return res.json({ message: "Report sent successfully" });
+  } catch (err) {
+    console.error("❌ Email Report Error:", err);
+    return res.status(500).json({ message: "Failed to send report email" });
+  }
+});
 // ── REGISTER ──────────────────────────────────────────────────────────────
 app.post("/api/register", async (req, res) => {
   try {
